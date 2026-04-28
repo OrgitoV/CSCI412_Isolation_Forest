@@ -1,11 +1,12 @@
 from sklearn.ensemble import IsolationForest as isf
 from sklearn.preprocessing import LabelEncoder as le, StandardScaler as scaler
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt #FOR NEXT TIME --> PLOT THE DATA
 
-np.random.seed(42)
+np.random.seed(42) # Change seed to create different datasets
 DATA_SIZE = 20000
 
 normal_durations = np.random.normal(loc = 180, scale = 40, size = int(DATA_SIZE * 0.97))
@@ -73,11 +74,78 @@ model = isf(
 
 model.fit(X_scaled)
 
-df['anomaly_score'] = model.decision_function(X_scaled)
+true_labels = np.concatenate([np.zeros(int(DATA_SIZE * 0.97)), np.ones(int(DATA_SIZE * 0.03))]).astype(int)
+
+predictions = model.predict(X_scaled)
+predictions = (predictions == -1).astype(int)
+
+f1 = f1_score(true_labels, predictions)
+precision = precision_score(true_labels, predictions)
+recall = recall_score(true_labels, predictions)
+accuracy = accuracy_score(true_labels, predictions)
+print(f"F1-SCORE: {f1:.4f}")
+print(f"PRECISION: {precision:.4f}")
+print(f"RECALL: {recall:.4f}")
+print(f"ACCURACY: {accuracy:.4f}")
+
+cm = confusion_matrix(true_labels, predictions)
+print(f"\nConfusion Matrix:\n{cm}")
+print(f"True Negatives: {cm[0, 0]}")
+print(f"False Positives: {cm[0, 1]}")
+print(f"False Negatives: {cm[1, 0]}")
+print(f"True Positives: {cm[1, 1]}")
+
+df['anomaly_score'] = model.decision_function(X_scaled).round(3)
 df['anomaly'] = (model.predict(X_scaled) == -1).astype(int)
+
+#### VISUALIZATIONS ####
+fig, axes = plt.subplots(2, 2, figsize = (14, 10))
+
+# Plot 1: Duration vs. Hour (colored by anomaly)
+axes[0, 0].scatter(df[df['anomaly'] == 0]['hour'], df[df['anomaly'] == 0]['duration'],
+                   alpha = 0.5, label = 'Normal', s = 20)
+axes[0, 0].scatter(df[df['anomaly'] == 1]['hour'], df[df['anomaly'] == 1]['duration'],
+                   alpha = 0.7, label = 'Anomaly', color = 'red', s = 20)
+axes[0, 0].set_xlabel('Hour')
+axes[0, 0].set_ylabel('Duration (seconds)')
+axes[0, 0].set_title('Duration vs Hour')
+axes[0, 0].legend()
+axes[0, 0].grid(True, alpha = 0.3)
+
+# Plot 2: Duration vs. DSD
+axes[0, 1].scatter(df[df['anomaly'] == 0]['days_since_discharge'], df[df['anomaly'] == 0]['duration'],
+                   alpha = 0.5, label = 'Normal', s = 20)
+axes[0, 1].scatter(df[df['anomaly'] == 1]['days_since_discharge'], df[df['anomaly'] == 1]['duration'],
+                   alpha = 0.7, label = 'Anomaly', color = 'red', s = 20)
+axes[0, 1].set_xlabel('Days Since Discharge')
+axes[0, 1].set_ylabel('Duration (seconds)')
+axes[0, 1].set_title('Duration vs. Days Since Patient Discharge')
+axes[0, 1].legend()
+axes[0, 1].grid(True, alpha = 0.3)
+
+# Plot 3: Anomaly Score Distribution
+axes[1, 0].hist(df[df['anomaly'] == 0]['anomaly_score'], bins = 50, alpha = 0.6, label = 'Normal')
+axes[1, 0].hist(df[df['anomaly'] == 1]['anomaly_score'], bins = 50, alpha = 0.6, label = 'Anomaly', color = 'red')
+axes[1, 0].set_xlabel('Anomaly Score')
+axes[1, 0].set_ylabel('Frequency')
+axes[1, 0].set_title('Anomaly Score Distribution')
+axes[1, 0].legend()
+axes[1, 0].grid(True, alpha = 0.3)
+
+# Anomaly Detection Summary
+anomaly_counts = df['anomaly'].value_counts()
+axes[1, 1].bar(['Normal', 'Anomaly'], [anomaly_counts.get(0, 0), anomaly_counts.get(1, 0)], color = ['blue', 'red'])
+axes[1, 1].set_ylabel('Count')
+axes[1, 1].set_title(f'Anomaly Detection Summary (F1-Score: {f1:.4f})')
+axes[1, 1].grid(True, alpha = 0.3, axis = 'y')
+
+plt.tight_layout()
+plt.savefig(Path(__file__).parent / "anomaly_visualization.png", dpi = 300)
+print(f"Visualization saved: {Path(__file__).parent / 'anomaly_visualization.png'}")
+# plt.show()
 
 out_path = Path(__file__).parent / "dataset.csv"
 df.to_csv(out_path, index = False)
 
 print(f"Saved: {out_path}")
-print(df.head())
+print(df.head(10))

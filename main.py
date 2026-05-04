@@ -17,17 +17,6 @@ durations = np.concatenate([normal_durations, anomaly_durations])
 durations = np.rint(durations).astype(int)
 
 # Create true labels before shuffling
-true_labels = np.concatenate([np.zeros(int(DATA_SIZE * 0.97)), np.ones(int(DATA_SIZE * 0.03))]).astype(int)
-
-# OMITTED
-# 86400 seconds in one day.
-# Usual working times are 8:00AM to 5:00PM FOR DOCTORS (second 28800 to 61200)
-# 1 Hour = 3600 Seconds. Standard Deviation is 1Hr
-# am8 = 28800
-# pm5 = 61200
-# normal_ts = np.random.normal(loc = (am8 + pm5) // 2, scale = 3600, size = int(DATA_SIZE * 0.97))
-# normal_ts = np.clip(normal_ts, am8, pm5)
-# anomaly_ts_low = np.random.normal(loc = am8 // 2, scale, )
 
 normal_hour = np.random.choice(range(8, 18), int(DATA_SIZE * 0.97))
 anomaly_hour = np.random.choice(list(range(0, 6)) + list(range(20, 24)), int(DATA_SIZE * 0.03))
@@ -39,6 +28,8 @@ anomaly_dsd = np.random.normal(loc = 25, scale = 8, size = int(DATA_SIZE * 0.03)
 anomaly_dsd = np.clip(anomaly_dsd, 10, 50)
 dsd = np.concatenate([normal_dsd, anomaly_dsd])
 dsd = np.rint(dsd).astype(int)
+
+true_labels = np.concatenate([np.zeros(int(DATA_SIZE * 0.97)), np.ones(int(DATA_SIZE * 0.03))]).astype(int)
 
 users = [f"U{i:04d}" for i in range(500)]
 devices = [f"D{i:03d}" for i in range(250)]
@@ -57,6 +48,9 @@ device_encoder = le()
 
 df['user_enc'] = user_encoder.fit_transform(df['UserID'])
 df['device_enc'] = device_encoder.fit_transform(df['Device'])
+
+# Shuffle the data to avoid bias from sorted normal/anomaly entries
+df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
 features = [
     'duration',                 #seconds

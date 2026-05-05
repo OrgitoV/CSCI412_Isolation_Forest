@@ -1,4 +1,4 @@
 /venv
 __pycache__/
-dataset.csv
+ISF_Output.csv
 anomaly_visualization.png

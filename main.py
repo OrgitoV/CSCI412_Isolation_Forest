@@ -1,150 +1,83 @@
-from sklearn.ensemble import IsolationForest as isf
-from sklearn.preprocessing import LabelEncoder as le, StandardScaler as scaler
-from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
-from pathlib import Path
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt #FOR NEXT TIME --> PLOT THE DATA
+from sklearn.ensemble import RandomForestClassifier as rfc, VotingClassifier
+from sklearn.preprocessing import StandardScaler as scaler
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from create_data import create_isf_data, scores, print_scores
+from debugging import overfitting_check, distribution_check
+from models import isolationForest, baselineSVM
 
-np.random.seed(42) # Change seed to create different datasets
-DATA_SIZE = 20000
+# Run: LinearSCV (baseline), Improved RBF+augmented, Ensemble Voting, Hyperparameter-tuned variant
 
-normal_durations = np.random.normal(loc = 180, scale = 40, size = int(DATA_SIZE * 0.97))
-normal_durations = np.clip(normal_durations, 60, 300)
-anomaly_durations = np.random.normal(loc = 450, scale = 150, size = int(DATA_SIZE * 0.03))
-anomaly_durations = np.clip(anomaly_durations, 250, 800)
-durations = np.concatenate([normal_durations, anomaly_durations])
-durations = np.rint(durations).astype(int)
+def main():
+    anomaly_split = 0.1
+    contamination = (anomaly_split)
+    df, features = create_isf_data(data_size = 10000, anomaly_split = anomaly_split)
+    true_labels = df['is-anomaly'].values.astype(int) # Cheat-Sheet answers
 
-# Create true labels before shuffling
+    # Model cannot use certain types of data (strings such as 'ip-address') so we only include numerical
+    X = df[features]
 
-normal_hour = np.random.choice(range(8, 18), int(DATA_SIZE * 0.97))
-anomaly_hour = np.random.choice(list(range(0, 6)) + list(range(20, 24)), int(DATA_SIZE * 0.03))
-hour = np.concatenate([normal_hour, anomaly_hour])
+    X_train_base, X_test_base, y_train_base, y_test_base = train_test_split(
+        X, true_labels, test_size=0.2, random_state=42
+    )
 
-normal_dsd = np.random.normal(loc = 10, scale = 5, size = int(DATA_SIZE * 0.97))
-normal_dsd = np.clip(normal_dsd, 0, 30)
-anomaly_dsd = np.random.normal(loc = 25, scale = 8, size = int(DATA_SIZE * 0.03))
-anomaly_dsd = np.clip(anomaly_dsd, 10, 50)
-dsd = np.concatenate([normal_dsd, anomaly_dsd])
-dsd = np.rint(dsd).astype(int)
+    # Fit Scaler() on training data only
+    scaler_object = scaler()
+    X_train_scaled = scaler_object.fit_transform(X_train_base)
+    X_test_scaled = scaler_object.transform(X_test_base)
 
-true_labels = np.concatenate([np.zeros(int(DATA_SIZE * 0.97)), np.ones(int(DATA_SIZE * 0.03))]).astype(int)
+    # Isolation Forest Model and Testing
+    isf_model, isf_predictions = isolationForest(contamination, X_train_scaled, X_test_scaled)
+    isf_f1, isf_precision, isf_recall, isf_accuracy, isf_confusion_matrix = scores(y_test_base, isf_predictions)
+    print_scores("ISOLATION FOREST STATISTIC SCORES", isf_f1, isf_precision, isf_recall, isf_accuracy, isf_confusion_matrix)
 
-users = [f"U{i:04d}" for i in range(500)]
-devices = [f"D{i:03d}" for i in range(250)]
+    """=== BASELINE SVM ==="""
 
-df = pd.DataFrame({
-    'duration': durations,
-    'hour': hour,
-    'days_since_discharge': dsd,
-    'UserID': np.random.choice(users, size = DATA_SIZE, replace = True),
-    'Device': np.random.choice(devices, size = DATA_SIZE, replace = True),
-    'true_label': true_labels
-})
+    baseline_svm, baseline_predictions = baselineSVM(X_train_scaled, X_test_scaled, y_train_base)
+    baseline_f1, baseline_precision, baseline_recall, baseline_accuracy, baseline_confusion_matrix = scores(y_test_base, baseline_predictions)
+    print_scores("BASELINE SVM STATISTIC SCORES", baseline_f1, baseline_precision, baseline_recall, baseline_accuracy, baseline_confusion_matrix)
 
-user_encoder = le()
-device_encoder = le()
+    # Checks
+    distribution_check(y_train_base, y_test_base, baseline_predictions)
+    overfitting_check(svm = baseline_svm, X_train = X_train_scaled, y_train = y_train_base, scoring = 'f1')
 
-df['user_enc'] = user_encoder.fit_transform(df['UserID'])
-df['device_enc'] = device_encoder.fit_transform(df['Device'])
 
-# Shuffle the data to avoid bias from sorted normal/anomaly entries
-df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    """=== IMPROVED: RBF KERNEL SVM ==="""
 
-features = [
-    'duration',                 #seconds
-    'hour',
-    'days_since_discharge',
-    'device_enc',
-    'user_enc'
-]
+    # Train RBF SVM on original features with better regularization
+    improved_svm = SVC(kernel='rbf', C=1.0, gamma='scale', class_weight='balanced', random_state=123, probability=True)
+    improved_svm.fit(X_train_scaled, y_train_base)
+    improved_predictions = improved_svm.predict(X_test_scaled)
 
-X = df[features]
-X_scaled = scaler().fit_transform(X)
+    improved_f1, improved_precision, improved_recall, improved_accuracy, improved_confusion_matrix = scores(y_test_base, improved_predictions)
+    print_scores("IMPROVED SVM (RBF KERNEL) STATISTIC SCORES", improved_f1, improved_precision, improved_recall, improved_accuracy, improved_confusion_matrix)
 
-model = isf(
-    n_estimators = 300,     # number of tress
-    max_samples = 512,
-    contamination = 0.03,   # expected anomaly %
-    random_state = 42
-)
+    # Checks
+    distribution_check(y_train_base, y_test_base, improved_predictions)
+    overfitting_check(svm = improved_svm, X_train = X_train_scaled, y_train = y_train_base, scoring = 'f1')
 
-model.fit(X_scaled)
+    """=== ENSEMBLE: VOTING CLASSIFIER ==="""
 
-# Extract true labels from dataframe
-true_labels = df['true_label'].values
+    # Create RandomForest and RBF SVM for ensemble
+    rf_model = rfc(n_estimators=100, max_depth=10, class_weight='balanced', random_state=123)
+    rbf_svm = SVC(kernel='rbf', C=1.0, gamma='scale', class_weight='balanced', random_state=123, probability=True)
+    
+    # Voting ensemble: combine RBF SVM with RandomForest (both support predict_proba)
+    voting_clf = VotingClassifier(
+        estimators=[
+            ('rbf_svm', rbf_svm),
+            ('rf', rf_model)
+        ],
+        voting='soft'
+    )
+    voting_clf.fit(X_train_scaled, y_train_base)
+    ensemble_predictions = voting_clf.predict(X_test_scaled)
 
-anomaly_scores = model.decision_function(X_scaled)
-predictions = (model.predict(X_scaled) == -1).astype(int)
+    ensemble_f1, ensemble_precision, ensemble_recall, ensemble_accuracy, ensemble_confusion_matrix = scores(y_test_base, ensemble_predictions)
+    print_scores("ENSEMBLE VOTING (RBF SVM + RANDOM FOREST) STATISTIC SCORES", ensemble_f1, ensemble_precision, ensemble_recall, ensemble_accuracy, ensemble_confusion_matrix)
 
-f1 = f1_score(true_labels, predictions)
-precision = precision_score(true_labels, predictions)
-recall = recall_score(true_labels, predictions)
-accuracy = accuracy_score(true_labels, predictions)
-print(f"F1-SCORE: {f1:.3f}")
-print(f"PRECISION: {precision:.3f}")
-print(f"RECALL: {recall:.3f}")
-print(f"ACCURACY: {accuracy:.3f}")
+    # Checks
+    distribution_check(y_train_base, y_test_base, ensemble_predictions)
 
-cm = confusion_matrix(true_labels, predictions)
-print(f"\nConfusion Matrix:\n{cm}")
-print(f"True Negatives: {cm[0, 0]}")
-print(f"False Positives: {cm[0, 1]}")
-print(f"False Negatives: {cm[1, 0]}")
-print(f"True Positives: {cm[1, 1]}")
-
-df['anomaly_score'] = anomaly_scores.round(3)
-df['anomaly'] = (model.predict(X_scaled) == -1).astype(int)
-
-#### VISUALIZATIONS ####
-fig, axes = plt.subplots(2, 2, figsize = (14, 10))
-
-# Plot 1: Duration vs. Hour (colored by anomaly)
-axes[0, 0].scatter(df[df['anomaly'] == 0]['hour'], df[df['anomaly'] == 0]['duration'],
-                   alpha = 0.5, label = 'Normal', s = 20)
-axes[0, 0].scatter(df[df['anomaly'] == 1]['hour'], df[df['anomaly'] == 1]['duration'],
-                   alpha = 0.7, label = 'Anomaly', color = 'red', s = 20)
-axes[0, 0].set_xlabel('Hour')
-axes[0, 0].set_ylabel('Duration (seconds)')
-axes[0, 0].set_title('Duration vs Hour')
-axes[0, 0].legend()
-axes[0, 0].grid(True, alpha = 0.3)
-
-# Plot 2: Duration vs. DSD
-axes[0, 1].scatter(df[df['anomaly'] == 0]['days_since_discharge'], df[df['anomaly'] == 0]['duration'],
-                   alpha = 0.5, label = 'Normal', s = 20)
-axes[0, 1].scatter(df[df['anomaly'] == 1]['days_since_discharge'], df[df['anomaly'] == 1]['duration'],
-                   alpha = 0.7, label = 'Anomaly', color = 'red', s = 20)
-axes[0, 1].set_xlabel('Days Since Discharge')
-axes[0, 1].set_ylabel('Duration (seconds)')
-axes[0, 1].set_title('Duration vs. Days Since Patient Discharge')
-axes[0, 1].legend()
-axes[0, 1].grid(True, alpha = 0.3)
-
-# Plot 3: Anomaly Score Distribution
-axes[1, 0].hist(df[df['anomaly'] == 0]['anomaly_score'], bins = 50, alpha = 0.6, label = 'Normal')
-axes[1, 0].hist(df[df['anomaly'] == 1]['anomaly_score'], bins = 50, alpha = 0.6, label = 'Anomaly', color = 'red')
-axes[1, 0].set_xlabel('Anomaly Score')
-axes[1, 0].set_ylabel('Frequency')
-axes[1, 0].set_title('Anomaly Score Distribution')
-axes[1, 0].legend()
-axes[1, 0].grid(True, alpha = 0.3)
-
-# Anomaly Detection Summary
-anomaly_counts = df['anomaly'].value_counts()
-axes[1, 1].bar(['Normal', 'Anomaly'], [anomaly_counts.get(0, 0), anomaly_counts.get(1, 0)], color = ['blue', 'red'])
-axes[1, 1].set_ylabel('Count')
-axes[1, 1].set_title(f'Anomaly Detection Summary (F1-Score: {f1:.4f})')
-axes[1, 1].grid(True, alpha = 0.3, axis = 'y')
-
-plt.tight_layout()
-plt.savefig(Path(__file__).parent / "anomaly_visualization.png", dpi = 300)
-print(f"Visualization saved: {Path(__file__).parent / 'anomaly_visualization.png'}")
-# plt.show() # Uncomment if you want to see the plot
-
-out_path = Path(__file__).parent / "dataset.csv"
-df.to_csv(out_path, index = False)
-
-print(f"Saved: {out_path}")
-print(df.head(10))
+if __name__ == "__main__":
+    main()

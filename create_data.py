@@ -2,7 +2,7 @@ import faker
 import numpy as np
 import pandas as pd
 
-def create_isf_data(data_size = 20000, anomaly_split: float = 0.1):
+def create_isf_data(data_size = 1000, anomaly_split: float = 0.1):
     # Keep a fixed seed for reproducibility
     np.random.seed(42)
     faker.Faker.seed(42)
@@ -19,9 +19,9 @@ def create_isf_data(data_size = 20000, anomaly_split: float = 0.1):
     # Normal behavior: right-skewed (realistic access patterns)
     normal_duration = np.random.lognormal(mean = 5.5, sigma = 0.8, size = normal_size)
 
-    anomaly_durations_short = np.random.uniform(0.05, 1, size = int(anomaly_size * 0.05))  # Reduced from 15% to 5%
-    anomaly_durations_long = np.random.exponential(scale = 2500, size = int(anomaly_size * 0.05))  # Reduced from 15% to 5%
-    anomaly_durations_overlap = np.random.lognormal(mean = 5.5, sigma = 0.9, size = int(anomaly_size * 0.9))  # Increased from 70% to 90%, same distribution as normal
+    anomaly_durations_short = np.random.uniform(0.05, 1, size = int(anomaly_size * 0.35))  # Very short accesses
+    anomaly_durations_long = np.random.exponential(scale = 2500, size = int(anomaly_size * 0.35))  # Very long accesses
+    anomaly_durations_overlap = np.random.lognormal(mean = 5.5, sigma = 0.9, size = int(anomaly_size * 0.3))  # Only 30% blend in with normal
 
     anomaly_durations = np.concatenate([anomaly_durations_short, anomaly_durations_long, anomaly_durations_overlap])
     """=== DURATION ENTRIES ==="""
@@ -44,8 +44,8 @@ def create_isf_data(data_size = 20000, anomaly_split: float = 0.1):
     anomaly_hours = np.random.normal(loc = 13, scale = 6, size = anomaly_size)  # Changed from loc=2 to loc=13
     anomaly_hours = np.clip(anomaly_hours, 0, 23).astype(int)
     
-    # Only 20% of anomalies occur at truly suspicious times
-    hard_hour_anomalies = np.random.choice(anomaly_size, size = int(anomaly_size * 0.2), replace = False)
+    # 60% of anomalies occur at truly suspicious times
+    hard_hour_anomalies = np.random.choice(anomaly_size, size = int(anomaly_size * 0.6), replace = False)
     anomaly_hours[hard_hour_anomalies] = np.random.choice([0, 1, 2, 3, 4], size = len(hard_hour_anomalies))
     anomaly_hours = np.clip(anomaly_hours, 0, 23).astype(int)
     """=== HOURS ACCESSED ENTRIES ==="""
@@ -65,8 +65,8 @@ def create_isf_data(data_size = 20000, anomaly_split: float = 0.1):
     anomaly_dsd = np.random.lognormal(mean = 2.5, sigma = 1.2, size = anomaly_size).astype(int)
     anomaly_dsd = np.clip(anomaly_dsd, 0, 365).astype(int)
     
-    # Only 15% access very old records (obvious anomalies)
-    old_anomaly_dsd = np.random.choice(anomaly_size, size = int(anomaly_size * 0.15), replace = False)
+    # 50% access very old records (obvious anomalies)
+    old_anomaly_dsd = np.random.choice(anomaly_size, size = int(anomaly_size * 0.5), replace = False)
     anomaly_dsd[old_anomaly_dsd] = np.random.uniform(300, 1000, size = len(old_anomaly_dsd)).astype(int)
     """=== DAYS SINCE DISCHARGE ENTRIES ==="""
 
@@ -76,8 +76,8 @@ def create_isf_data(data_size = 20000, anomaly_split: float = 0.1):
     # Normal: few login failures (occasional typo, credential mixup)
     normal_login_fails = np.random.poisson(lam = 0.5, size = normal_size)
 
-    # Anomaly: slightly more login failures (subtle pattern, harder to detect)
-    anomaly_login_fails = np.random.poisson(lam = 0.8, size = anomaly_size)
+    # Anomaly: significantly more login failures (obvious pattern)
+    anomaly_login_fails = np.random.poisson(lam = 2.5, size = anomaly_size)
     """=== NUMBER OF LOGIN FAILURES ENTRIES ==="""
 
     ####################################################################################################################
@@ -167,20 +167,29 @@ def scores(true_labels, predictions):
     precision = precision_score(true_labels, predictions)
     recall = recall_score(true_labels, predictions)
     accuracy = accuracy_score(true_labels, predictions)
+    
     conf_matrix = confusion_matrix(true_labels, predictions)
+    
+    # Calculate Sensitivity and Specificity
+    tn, fp, fn, tp = conf_matrix.ravel()
+    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0  # True Positive Rate
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0  # True Negative Rate
 
-    return f1, precision, recall, accuracy, conf_matrix
+    return f1, precision, recall, accuracy, conf_matrix, sensitivity, specificity
 
-def print_scores(title, f1, precision, recall, accuracy, conf_matrix):
+def print_scores(title, f1, precision, recall, accuracy, conf_matrix, sensitivity, specificity):
     print(f"\n\n==== {title} ====")
     print(f"F1-SCORE: {f1:.4f}")
     print(f"PRECISION: {precision:.4f}")
     print(f"RECALL: {recall:.4f}")
     print(f"ACCURACY: {accuracy:.4f}")
+    print(f"SENSITIVITY: {sensitivity:.4f}")
+    print(f"SPECIFICITY: {specificity:.4f}")
 
     print(f"\nConfusion Matrix:\n{conf_matrix}")
-    print(f"True Negatives: {conf_matrix[0, 0]}")
-    print(f"False Positives: {conf_matrix[0, 1]}")
-    print(f"False Negatives: {conf_matrix[1, 0]}")
-    print(f"True Positives: {conf_matrix[1, 1]}")
+    tn, fp, fn, tp = conf_matrix.ravel()
+    print(f"True Negatives: {tn}")
+    print(f"False Positives: {fp}")
+    print(f"False Negatives: {fn}")
+    print(f"True Positives: {tp}")
     print("============================================")

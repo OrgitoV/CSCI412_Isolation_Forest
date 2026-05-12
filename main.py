@@ -4,7 +4,7 @@ from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
 from create_data import create_isf_data, scores, print_scores
 from debugging import overfitting_check, distribution_check
-from models import isolationForest, baselineSVM
+from models import isolationForest, baselineSVM, linearSVM
 from graph_data import graph_data, graph_scores
 
 # Run: LinearSCV (baseline), Improved RBF+augmented, Ensemble Voting, Hyperparameter-tuned variant
@@ -48,9 +48,7 @@ def main():
     """=== IMPROVED: RBF KERNEL SVM ==="""
 
     # Train RBF SVM on original features with better regularization
-    improved_svm = SVC(kernel='rbf', C=1.0, gamma='scale', class_weight='balanced', random_state=123, probability=True)
-    improved_svm.fit(X_train_scaled, y_train_base)
-    improved_predictions = improved_svm.predict(X_test_scaled)
+    improved_svm, improved_predictions = linearSVM(X_train_scaled, X_test_scaled, y_train_base)
 
     improved_f1, improved_precision, improved_recall, improved_accuracy, improved_confusion_matrix, improved_sensitivity, improved_specificity = scores(y_test_base, improved_predictions)
     print_scores("IMPROVED SVM (RBF KERNEL) STATISTIC SCORES", improved_f1, improved_precision, improved_recall, improved_accuracy, improved_confusion_matrix, improved_sensitivity, improved_specificity)

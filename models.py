@@ -1,5 +1,6 @@
 from sklearn.ensemble import IsolationForest as isf, RandomForestClassifier as rfc, VotingClassifier
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
+from typing import Literal
 
 def isolationForest(contamination, X_train, X_test):
     isf_model = isf(n_estimators = 500, max_samples = 1024, contamination = contamination, random_state = 123)
@@ -8,9 +9,16 @@ def isolationForest(contamination, X_train, X_test):
 
     return isf_model, predictions
 
-def baselineSVM(X_train, X_test, y_train, C = 1.0, loss = 'squared_hinge', class_weight = 'balanced', random_state = 123, max_iter = 3000):
+def baselineSVM(X_train, X_test, y_train, C = 1.0, loss: Literal['squared_hinge', 'hinge'] = 'squared_hinge', class_weight = 'balanced', random_state = 123, max_iter = 3000):
     baseline_svm = LinearSVC(C = C, loss = loss, class_weight = class_weight, random_state = random_state, max_iter = max_iter, dual = False)
     baseline_svm.fit(X_train, y_train)
     predictions = baseline_svm.predict(X_test)
 
     return baseline_svm, predictions
+
+def linearSVM(X_train, X_test, y_train):
+    improved_svm = SVC(kernel='rbf', C=1.0, gamma='scale', class_weight='balanced', random_state=123, probability=True)
+    improved_svm.fit(X_train, y_train)
+    improved_predictions = improved_svm.predict(X_test)
+
+    return improved_svm, improved_predictions

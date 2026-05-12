@@ -1,4 +1,5 @@
 # Graph data
+from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -15,7 +16,8 @@ def graph_data(data_frame, features):
         ax.set_title(feature)
         ax.legend()
     plt.tight_layout()
-    plt.show()
+    plt.savefig('data_distribution.png', dpi = 300, bbox_inches = 'tight')
+    # plt.show()
 
 def graph_scores(models_dict):
     """
@@ -49,8 +51,9 @@ def graph_scores(models_dict):
     ax.set_xticks(x + width * 2)
     ax.set_xticklabels(model_names)
     ax.legend()
-    ax.set_ylim([0, 1.05])
+    ax.set_ylim(0, 1.05)
     ax.grid(axis='y', alpha=0.3)
     
     plt.tight_layout()
-    plt.show()
+    plt.savefig('model_performance_comparison.png', dpi = 300, bbox_inches = 'tight')
+    # plt.show()
